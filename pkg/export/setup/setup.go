@@ -35,13 +35,19 @@ import (
 	_ "k8s.io/client-go/plugin/pkg/client/auth/gcp"
 )
 
+// Supported HA backend modes.
+const (
+	HABackendNone       = "none"
+	HABackendKubernetes = "kube"
+)
+
 // Generally, global state is not a good approach and actively discouraged throughout
 // the Prometheus code bases. However, this is the most practical way to inject the export
 // path into lower layers of Prometheus without touching an excessive amount of functions
 // in our fork to propagate it.
 var globalExporter *export.Exporter
 
-// InitGlobal initializes the global instance of the GCM exporter.
+// SetGlobal sets the global instance of the GCM exporter.
 func SetGlobal(exporter *export.Exporter) (err error) {
 	globalExporter = exporter
 	return err
@@ -139,11 +145,6 @@ func FromFlags(a *kingpin.Application) func(log.Logger, prometheus.Registerer) (
 		return export.New(logger, metrics, opts)
 	}
 }
-
-const (
-	HABackendNone       = "none"
-	HABackendKubernetes = "kube"
-)
 
 func loadKubeConfig(kubeconfigPath string) (*rest.Config, error) {
 	if kubeconfigPath == "" {

@@ -99,7 +99,8 @@ type Exporter struct {
 	// be processed.
 	nextc chan struct{}
 
-	// The external labels may be updated asynchronously by configuration changes.
+	// The external labels may be updated asynchronously by configuration changes
+	// and must be locked with mtx.
 	mtx            sync.Mutex
 	externalLabels labels.Labels
 }
@@ -173,7 +174,7 @@ func (alwaysRanger) Run(ctx context.Context) {
 	<-ctx.Done()
 }
 
-func (opts *ExporterOpts) newMetricClient(ctx context.Context) (*monitoring.MetricClient, error) {
+func newMetricClient(ctx context.Context, opts ExporterOpts) (*monitoring.MetricClient, error) {
 	clientOpts := []option.ClientOption{
 		option.WithGRPCDialOption(grpc.WithUnaryInterceptor(grpc_prometheus.UnaryClientInterceptor)),
 	}
@@ -236,7 +237,7 @@ func New(logger log.Logger, reg prometheus.Registerer, opts ExporterOpts) (*Expo
 		opts.HighAvailabilityRange = alwaysRanger{}
 	}
 
-	metricClient, err := opts.newMetricClient(context.Background())
+	metricClient, err := newMetricClient(context.Background(), opts)
 	if err != nil {
 		return nil, errors.Wrap(err, "create metric client")
 	}
@@ -335,6 +336,8 @@ func (e *Exporter) Export(metadata MetadataFunc, batch []record.RefSample) {
 	e.mtx.Unlock()
 
 	if !ok {
+		// If we are not the leader, clear the cache so we don't send cumulatives
+		// with old start timestamps when we become leader again later.
 		// This will clear repeatedly while we don't hold the lease, which doesn't
 		// harm in any way.
 		e.seriesCache.clear()
